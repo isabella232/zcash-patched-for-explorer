@@ -2288,8 +2288,11 @@ enum DisconnectResult
 };
 
 /** Undo the effects of this block (with given index) on the UTXO set represented by coins.
- *  When UNCLEAN or FAILED is returned, view is left in an indeterminate state. */
-DisconnectResult DisconnectBlock(const CBlock& block, const CBlockIndex* pindex, CCoinsViewCache& view)
+ *  When UNCLEAN or FAILED is returned, view is left in an indeterminate state.
+ *  The addressIndex and spentIndex will be updated if requested.
+ */
+DisconnectResult DisconnectBlock(const CBlock& block, CValidationState& state,
+    const CBlockIndex* pindex, CCoinsViewCache& view, bool const updateIndices)
 {
     assert(pindex->GetBlockHash() == view.GetBestBlock());
 
@@ -2418,6 +2421,13 @@ DisconnectResult DisconnectBlock(const CBlock& block, const CBlockIndex* pindex,
                         continue;
                     }
                 }
+                // insightexplorer
+                if (fSpentIndex && updateIndices) {
+                    // undo and delete the spent index
+                    spentIndex.push_back(make_pair(
+                        CSpentIndexKey(input.prevout.hash, input.prevout.n),
+                        CSpentIndexValue()));
+                }
             }
         }
     }
@@ -2436,18 +2446,27 @@ DisconnectResult DisconnectBlock(const CBlock& block, const CBlockIndex* pindex,
         view.PopAnchor(SaplingMerkleTree::empty_root(), SAPLING);
     }
 
-    if (fAddressIndex) {
-        if (!pblocktree->EraseAddressIndex(addressIndex)) {
-            return AbortNode(state, "Failed to delete address index");
-        }
-        if (!pblocktree->UpdateAddressUnspentIndex(addressUnspentIndex)) {
-            return AbortNode(state, "Failed to write address unspent index");
-        }
-    }
-
     // move best block pointer to prevout block
     view.SetBestBlock(pindex->pprev->GetBlockHash());
 
+    // insightexplorer
+    if (fAddressIndex && updateIndices) {
+        if (!pblocktree->EraseAddressIndex(addressIndex)) {
+            AbortNode(state, "Failed to delete address index");
+            return DISCONNECT_FAILED;
+        }
+        if (!pblocktree->UpdateAddressUnspentIndex(addressUnspentIndex)) {
+            AbortNode(state, "Failed to write address unspent index");
+            return DISCONNECT_FAILED;
+        }
+    }
+    // insightexplorer
+    if (fSpentIndex && updateIndices) {
+        if (!pblocktree->UpdateSpentIndex(spentIndex)) {
+            AbortNode(state, "Failed to write transaction index");
+            return DISCONNECT_FAILED;
+        }
+    }
     return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
 }
 
@@ -3104,7 +3123,8 @@ bool static DisconnectTip(CValidationState &state, bool fBare = false) {
     int64_t nStart = GetTimeMicros();
     {
         CCoinsViewCache view(pcoinsTip);
-        if (DisconnectBlock(block, pindexDelete, view) != DISCONNECT_OK)
+        // insightexplorer: update indices (true)
+        if (DisconnectBlock(block, state, pindexDelete, view, true) != DISCONNECT_OK)
             return error("DisconnectTip(): DisconnectBlock %s failed", pindexDelete->GetBlockHash().ToString());
         assert(view.Flush());
     }
@@ -4539,7 +4559,8 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
         }
         // check level 3: check for inconsistencies during memory-only disconnect of tip blocks
         if (nCheckLevel >= 3 && pindex == pindexState && (coins.DynamicMemoryUsage() + pcoinsTip->DynamicMemoryUsage()) <= nCoinCacheUsage) {
-            DisconnectResult res = DisconnectBlock(block, pindex, coins);
+            // insightexplorer: do not update indices (false)
+            DisconnectResult res = DisconnectBlock(block, state, pindex, coins, false);
             if (res == DISCONNECT_FAILED) {
                 return error("VerifyDB(): *** irrecoverable inconsistency in block data at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
             }
