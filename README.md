@@ -1,6 +1,9 @@
-+***Please note, this repository is obsolete and will be removed soon. It had changes needed
-+to support the Bitcore Insight Explorer, but those changes have now been incorporated into
-+[version 2.0.7 in the main Zcash repository](https://github.com/zcash/zcash/tree/v2.0.7).***
+***Please note, this repository is obsolete and will be removed soon. It had changes needed
+to support the Bitcore Insight Explorer, but those changes have been incorporated into
+[version 2.0.7 in the main Zcash repository](https://github.com/zcash/zcash/tree/v2.0.7).
+Please see the
+[Insight Block Explorer Guide](https://zcash.readthedocs.io/en/latest/rtd_pages/insight_explorer.html).***
+
 
 Zcash 2.0.1
 <img align="right" width="120" height="80" src="doc/imgs/logo.png">
